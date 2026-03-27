@@ -1,14 +1,26 @@
 using System;
-using System.Data;
-using System.Data.SQLite;
+using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace SimuladorBancario
 {
+    // Classe de Modelo sem o campo Id
+    public class Conta
+    {
+        public string Nome { get; set; }
+        public string Agencia { get; set; }
+        public string NumeroConta { get; set; }
+        public double Saldo { get; set; }
+    }
+
     public partial class Form1 : Form
     {
-        private string connectionString = "Data Source=banco_financeiro.db;Version=3;";
+        private string jsonFilePath = "banco_financeiro.json";
+        private List<Conta> listaContas = new List<Conta>();
 
         // --- DECLARAÇÃO DOS COMPONENTES ---
         private DataGridView dgvContas;
@@ -18,13 +30,12 @@ namespace SimuladorBancario
 
         public Form1()
         {
-            InitializeComponent(); // Agora ele vai existir abaixo
+            InitializeComponent();
             ConfigurarInterface();
-            CriarBancoDeDados();
+            CarregarDados();
             AtualizarGrid();
         }
 
-        // --- MÉTODO QUE CRIA OS BOTÕES E CAMPOS NA TELA ---
         private void InitializeComponent()
         {
             this.dgvContas = new DataGridView();
@@ -38,39 +49,32 @@ namespace SimuladorBancario
             this.btnDeposito = new Button();
             this.btnTransferir = new Button();
             
-            // Labels
             this.lblNome = new Label { Text = "Nome:", Top = 10, Left = 10, Width = 50 };
             this.lblAgencia = new Label { Text = "Agência:", Top = 40, Left = 10, Width = 60 };
             this.lblConta = new Label { Text = "Conta:", Top = 70, Left = 10, Width = 50 };
             this.lblSaldo = new Label { Text = "Saldo:", Top = 100, Left = 10, Width = 50 };
 
-            // Posicionamento dos Campos
             txtNome.SetBounds(80, 10, 200, 25);
             txtAgencia.SetBounds(80, 40, 100, 25);
             txtConta.SetBounds(80, 70, 100, 25);
             txtSaldo.SetBounds(80, 100, 100, 25);
 
-            // Botões do CRUD
             btnSalvar.Text = "Salvar"; btnSalvar.SetBounds(300, 10, 100, 30);
             btnAtualizar.Text = "Atualizar"; btnAtualizar.SetBounds(300, 45, 100, 30);
             btnExcluir.Text = "Excluir"; btnExcluir.SetBounds(300, 80, 100, 30);
 
-            // Botões de Operação
             btnDeposito.Text = "Depósito"; btnDeposito.SetBounds(420, 10, 100, 30);
             btnTransferir.Text = "Transferir"; btnTransferir.SetBounds(420, 45, 100, 30);
 
-            // Grid
             dgvContas.SetBounds(10, 150, 520, 200);
             dgvContas.SelectionChanged += dgvContas_SelectionChanged;
 
-            // Eventos dos Botões
             btnSalvar.Click += btnSalvar_Click;
             btnAtualizar.Click += btnAtualizar_Click;
             btnExcluir.Click += btnExcluir_Click;
             btnDeposito.Click += btnDeposito_Click;
             btnTransferir.Click += btnTransferir_Click;
 
-            // Configuração do Formulário
             this.ClientSize = new Size(550, 370);
             this.Controls.AddRange(new Control[] { 
                 dgvContas, txtNome, txtAgencia, txtConta, txtSaldo, 
@@ -104,48 +108,46 @@ namespace SimuladorBancario
             }
         }
 
-        private void CriarBancoDeDados()
+        private void CarregarDados()
         {
-            using (var conn = new SQLiteConnection(connectionString))
+            if (File.Exists(jsonFilePath))
             {
-                conn.Open();
-                string sql = @"CREATE TABLE IF NOT EXISTS Contas (
-                                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                Nome TEXT,
-                                Agencia TEXT,
-                                NumeroConta TEXT,
-                                Saldo REAL)";
-                using (var cmd = new SQLiteCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
+                string jsonString = File.ReadAllText(jsonFilePath);
+                listaContas = JsonSerializer.Deserialize<List<Conta>>(jsonString) ?? new List<Conta>();
             }
+        }
+
+        private void SalvarDados()
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string jsonString = JsonSerializer.Serialize(listaContas, options);
+            File.WriteAllText(jsonFilePath, jsonString);
         }
 
         private void AtualizarGrid()
         {
-            using (var conn = new SQLiteConnection(connectionString))
-            {
-                conn.Open();
-                SQLiteDataAdapter da = new SQLiteDataAdapter("SELECT * FROM Contas", conn);
-                DataTable dt = new DataTable();
-                da.Fill(dt);
-                dgvContas.DataSource = dt;
-
-                // Formata a coluna "Saldo" para o padrão de moeda local (R$)
-                dgvContas.Columns["Saldo"].DefaultCellStyle.Format = "C2"; 
-            }
+            dgvContas.DataSource = null;
+            dgvContas.DataSource = listaContas.ToList();
+            if (dgvContas.Columns["Saldo"] != null)
+                dgvContas.Columns["Saldo"].DefaultCellStyle.Format = "C2";
         }
 
         private void btnSalvar_Click(object sender, EventArgs e)
         {
             if (ValidarCampos())
             {
-                ExecutarComando("INSERT INTO Contas (Nome, Agencia, NumeroConta, Saldo) VALUES (@nome, @ag, @num, @saldo)", 
-                    cmd => {
-                        cmd.Parameters.AddWithValue("@nome", txtNome.Text);
-                        cmd.Parameters.AddWithValue("@ag", txtAgencia.Text);
-                        cmd.Parameters.AddWithValue("@num", txtConta.Text);
-                        cmd.Parameters.AddWithValue("@saldo", double.Parse(txtSaldo.Text));
-                    });
-                AtualizarGrid(); LimparCampos();
+                var novaConta = new Conta
+                {
+                    Nome = txtNome.Text,
+                    Agencia = txtAgencia.Text,
+                    NumeroConta = txtConta.Text,
+                    Saldo = double.Parse(txtSaldo.Text)
+                };
+
+                listaContas.Add(novaConta);
+                SalvarDados();
+                AtualizarGrid(); 
+                LimparCampos();
             }
         }
 
@@ -153,16 +155,21 @@ namespace SimuladorBancario
         {
             if (dgvContas.SelectedRows.Count > 0 && ValidarCampos())
             {
-                string id = dgvContas.SelectedRows[0].Cells["Id"].Value.ToString();
-                ExecutarComando(@"UPDATE Contas SET Nome=@nome, Agencia=@ag, NumeroConta=@num, Saldo=@saldo WHERE Id=@id",
-                    cmd => {
-                        cmd.Parameters.AddWithValue("@nome", txtNome.Text);
-                        cmd.Parameters.AddWithValue("@ag", txtAgencia.Text);
-                        cmd.Parameters.AddWithValue("@num", txtConta.Text);
-                        cmd.Parameters.AddWithValue("@saldo", double.Parse(txtSaldo.Text));
-                        cmd.Parameters.AddWithValue("@id", id);
-                    });
-                AtualizarGrid(); LimparCampos();
+                // Como não há ID, usamos o número da conta original da linha selecionada para busca
+                string contaOriginal = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value.ToString();
+                var conta = listaContas.FirstOrDefault(c => c.NumeroConta == contaOriginal);
+                
+                if (conta != null)
+                {
+                    conta.Nome = txtNome.Text;
+                    conta.Agencia = txtAgencia.Text;
+                    conta.NumeroConta = txtConta.Text;
+                    conta.Saldo = double.Parse(txtSaldo.Text);
+
+                    SalvarDados();
+                    AtualizarGrid();
+                    LimparCampos();
+                }
             }
         }
 
@@ -170,11 +177,13 @@ namespace SimuladorBancario
         {
             if (dgvContas.SelectedRows.Count > 0)
             {
-                string id = dgvContas.SelectedRows[0].Cells["Id"].Value.ToString();
+                string contaNum = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value.ToString();
                 if (MessageBox.Show("Excluir conta?", "Aviso", MessageBoxButtons.YesNo) == DialogResult.Yes)
                 {
-                    ExecutarComando("DELETE FROM Contas WHERE Id = @id", cmd => cmd.Parameters.AddWithValue("@id", id));
-                    AtualizarGrid(); LimparCampos();
+                    listaContas.RemoveAll(c => c.NumeroConta == contaNum);
+                    SalvarDados();
+                    AtualizarGrid();
+                    LimparCampos();
                 }
             }
         }
@@ -183,15 +192,18 @@ namespace SimuladorBancario
         {
             if (dgvContas.SelectedRows.Count > 0)
             {
-                string id = dgvContas.SelectedRows[0].Cells["Id"].Value.ToString();
+                string contaNum = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value.ToString();
                 string input = Microsoft.VisualBasic.Interaction.InputBox("Valor:", "Depósito");
+                
                 if (double.TryParse(input, out double valor))
                 {
-                    ExecutarComando("UPDATE Contas SET Saldo = Saldo + @v WHERE Id = @id", cmd => {
-                        cmd.Parameters.AddWithValue("@v", valor);
-                        cmd.Parameters.AddWithValue("@id", id);
-                    });
-                    AtualizarGrid();
+                    var conta = listaContas.FirstOrDefault(c => c.NumeroConta == contaNum);
+                    if (conta != null)
+                    {
+                        conta.Saldo += valor;
+                        SalvarDados();
+                        AtualizarGrid();
+                    }
                 }
             }
         }
@@ -200,28 +212,27 @@ namespace SimuladorBancario
         {
             if (dgvContas.SelectedRows.Count > 0)
             {
-                int idRemetente = Convert.ToInt32(dgvContas.SelectedRows[0].Cells["Id"].Value);
-                double saldoRemetente = Convert.ToDouble(dgvContas.SelectedRows[0].Cells["Saldo"].Value);
-                string nomeDestino = Microsoft.VisualBasic.Interaction.InputBox("Para quem?", "Transferir");
+                string contaRemetente = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value.ToString();
+                var remetente = listaContas.FirstOrDefault(c => c.NumeroConta == contaRemetente);
+
+                string nomeDestino = Microsoft.VisualBasic.Interaction.InputBox("Nome exato do destinatário:", "Transferir");
                 string valorInput = Microsoft.VisualBasic.Interaction.InputBox("Valor:", "Transferir");
 
-                if (double.TryParse(valorInput, out double valor) && valor <= saldoRemetente)
+                if (double.TryParse(valorInput, out double valor) && remetente != null && valor <= remetente.Saldo)
                 {
-                    using (var conn = new SQLiteConnection(connectionString))
+                    var destino = listaContas.FirstOrDefault(c => c.Nome.Equals(nomeDestino, StringComparison.OrdinalIgnoreCase));
+
+                    if (destino != null)
                     {
-                        conn.Open();
-                        using (var trans = conn.BeginTransaction())
-                        {
-                            try {
-                                new SQLiteCommand($"UPDATE Contas SET Saldo = Saldo - {valor.ToString().Replace(',', '.')} WHERE Id = {idRemetente}", conn).ExecuteNonQuery();
-                                int rows = new SQLiteCommand($"UPDATE Contas SET Saldo = Saldo + {valor.ToString().Replace(',', '.')} WHERE Nome = '{nomeDestino}'", conn).ExecuteNonQuery();
-                                if (rows > 0) { trans.Commit(); MessageBox.Show("Sucesso!"); }
-                                else { trans.Rollback(); MessageBox.Show("Destinatário não encontrado."); }
-                            } catch { trans.Rollback(); }
-                        }
+                        remetente.Saldo -= valor;
+                        destino.Saldo += valor;
+                        SalvarDados();
+                        MessageBox.Show("Transferência realizada!");
                     }
+                    else { MessageBox.Show("Destinatário não encontrado."); }
                     AtualizarGrid();
                 }
+                else { MessageBox.Show("Saldo insuficiente ou dados inválidos."); }
             }
         }
 
@@ -229,19 +240,10 @@ namespace SimuladorBancario
         {
             if (dgvContas.SelectedRows.Count > 0)
             {
-                txtNome.Text = dgvContas.SelectedRows[0].Cells["Nome"].Value.ToString();
-                txtAgencia.Text = dgvContas.SelectedRows[0].Cells["Agencia"].Value.ToString();
-                txtConta.Text = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value.ToString();
-                txtSaldo.Text = dgvContas.SelectedRows[0].Cells["Saldo"].Value.ToString();
-            }
-        }
-
-        private void ExecutarComando(string sql, Action<SQLiteCommand> preparar)
-        {
-            using (var conn = new SQLiteConnection(connectionString))
-            {
-                conn.Open();
-                using (var cmd = new SQLiteCommand(sql, conn)) { preparar(cmd); cmd.ExecuteNonQuery(); }
+                txtNome.Text = dgvContas.SelectedRows[0].Cells["Nome"].Value?.ToString();
+                txtAgencia.Text = dgvContas.SelectedRows[0].Cells["Agencia"].Value?.ToString();
+                txtConta.Text = dgvContas.SelectedRows[0].Cells["NumeroConta"].Value?.ToString();
+                txtSaldo.Text = dgvContas.SelectedRows[0].Cells["Saldo"].Value?.ToString();
             }
         }
 
