@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,13 +8,4 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>SimuladorBancario</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.Data.SQLite" Version="1.0.119" />
-  </ItemGroup>
-  
-  <ItemGroup>
-    <Reference Include="Microsoft.VisualBasic" />
-  </ItemGroup>
-
 </Project>
